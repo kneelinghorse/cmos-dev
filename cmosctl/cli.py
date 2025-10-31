@@ -3,7 +3,9 @@ from __future__ import annotations
 import getpass
 import json
 import os
+import shutil
 import sqlite3
+import subprocess
 import sys
 import textwrap
 from collections import Counter, defaultdict
@@ -31,11 +33,20 @@ app.add_typer(export_app, name="export")
 
 STATUS_NORMALIZATION = {
     "Queued": "Queued",
+    "queued": "Queued",
     "Current": "Current",
+    "current": "Current",
     "In Progress": "In Progress",
+    "in progress": "In Progress",
+    "In_Progress": "In Progress",
+    "in_progress": "In Progress",
+    "inprogress": "In Progress",
     "Completed": "Completed",
+    "completed": "Completed",
     "Blocked": "Blocked",
+    "blocked": "Blocked",
     "Planned": "Queued",
+    "planned": "Queued",
 }
 
 SESSION_STATUS_FROM_ACTION = {
@@ -111,6 +122,47 @@ def _format_sessions_table(rows: Iterable[db_commands.Session]) -> list[str]:
     return lines
 
 
+def _optional_str(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = value.strip()
+    return text if text else None
+
+
+def _normalize_status_input(value: str) -> str:
+    normalized = (value or "").strip()
+    if not normalized:
+        raise typer.BadParameter("Status cannot be empty.")
+
+    direct = STATUS_NORMALIZATION.get(normalized)
+    if direct:
+        return direct
+
+    title_candidate = normalized.title()
+    direct = STATUS_NORMALIZATION.get(title_candidate)
+    if direct:
+        return direct
+
+    simplified = normalized.replace("_", " ").strip()
+    direct = STATUS_NORMALIZATION.get(simplified)
+    if direct:
+        return direct
+
+    simplified_key = simplified.lower().replace(" ", "")
+    for key, canonical in STATUS_NORMALIZATION.items():
+        key_normalized = key.lower().replace(" ", "").replace("_", "")
+        if key_normalized == simplified_key:
+            return canonical
+
+    for status in db_commands.MISSION_STATUSES:
+        match_key = status.lower().replace(" ", "")
+        if match_key == simplified_key:
+            return status
+
+    expected = ", ".join(db_commands.MISSION_STATUSES)
+    raise typer.BadParameter(f"Unsupported status '{value}'. Expected one of {expected}.")
+
+
 @app.callback()
 def cli(
     ctx: typer.Context,
@@ -149,6 +201,38 @@ def db_init(
         typer.echo(f"Created database at {final_path}")
 
 
+@db_app.command("shell")
+def db_shell(
+    ctx: typer.Context,
+    command: str | None = typer.Option(
+        None,
+        "--command",
+        "-c",
+        help="Optional SQLite command to execute before exiting the shell",
+    ),
+    sqlite_bin: str = typer.Option(
+        "sqlite3",
+        "--sqlite-bin",
+        help="SQLite executable to use (default: sqlite3)",
+    ),
+) -> None:
+    db_path = _ensure_context(ctx)
+    executable = sqlite_bin or "sqlite3"
+    resolved = shutil.which(executable)
+    if resolved is None:
+        typer.echo(f"Unable to locate SQLite executable '{executable}'.")
+        raise typer.Exit(code=1)
+
+    args = [resolved, str(db_path)]
+    if command:
+        args.append(command)
+
+    try:
+        subprocess.run(args, check=True)
+    except subprocess.CalledProcessError as exc:
+        raise typer.Exit(code=exc.returncode) from exc
+
+
 @mission_app.command("list")
 def mission_list(ctx: typer.Context) -> None:
     db_path = _ensure_context(ctx)
@@ -161,6 +245,232 @@ def mission_list(ctx: typer.Context) -> None:
 
     for line in _format_table(missions):
         typer.echo(line)
+
+
+@mission_app.command("show")
+def mission_show(
+    ctx: typer.Context,
+    mission_id: str = typer.Argument(..., help="Mission identifier to display"),
+) -> None:
+    db_path = _ensure_context(ctx)
+    with db_commands.connect(db_path) as conn:
+        mission = db_commands.get_mission(conn, mission_id=mission_id)
+
+    if mission is None:
+        typer.echo(f"Mission {mission_id} not found.")
+        raise typer.Exit(code=1)
+
+    typer.echo(f"ID: {mission.id}")
+    typer.echo(f"Name: {mission.name}")
+    typer.echo(f"Sprint: {mission.sprint_id or '-'}")
+    typer.echo(f"Status: {mission.status}")
+    typer.echo(f"Created: {mission.created_at or '-'}")
+    typer.echo(f"Completed: {mission.completed_at or '-'}")
+    typer.echo("Notes:")
+    typer.echo((mission.notes or "-").strip() or "-")
+
+
+@mission_app.command("edit")
+def mission_edit(
+    ctx: typer.Context,
+    mission_id: str = typer.Argument(..., help="Mission identifier to edit"),
+    name: str | None = typer.Option(None, "--name", "-n", help="Update the mission name"),
+    status: str | None = typer.Option(None, "--status", "-s", help="Update the mission status"),
+    sprint: str | None = typer.Option(None, "--sprint", "-p", help="Update the sprint identifier"),
+    notes: str | None = typer.Option(None, "--notes", help="Update or clear mission notes"),
+    completed_at: str | None = typer.Option(
+        None,
+        "--completed-at",
+        help="Update or clear the completed_at timestamp (ISO 8601 format preferred)",
+    ),
+    editor: bool | None = typer.Option(
+        None,
+        "--editor/--no-editor",
+        help="Open the mission in $EDITOR for manual editing (default: editor if no flags provided)",
+    ),
+) -> None:
+    db_path = _ensure_context(ctx)
+    with db_commands.connect(db_path) as conn:
+        mission = db_commands.get_mission(conn, mission_id=mission_id)
+        if mission is None:
+            typer.echo(f"Mission {mission_id} not found.")
+            raise typer.Exit(code=1)
+
+        updates: dict[str, Any] = {}
+        if name is not None:
+            updates["name"] = name.strip()
+        if sprint is not None:
+            updates["sprint_id"] = _optional_str(sprint)
+        if status is not None:
+            updates["status"] = _normalize_status_input(status)
+        if notes is not None:
+            updates["notes"] = _optional_str(notes)
+        if completed_at is not None:
+            updates["completed_at"] = _optional_str(completed_at)
+
+        use_editor = editor if editor is not None else (not updates)
+
+        if use_editor:
+            payload = {
+                "id": mission.id,
+                "sprint_id": mission.sprint_id,
+                "name": mission.name,
+                "status": mission.status,
+                "completed_at": mission.completed_at,
+                "notes": mission.notes,
+            }
+            initial_text = yaml.safe_dump(payload, sort_keys=False)
+            edited = typer.edit(initial_text, extension=".yaml")
+            if edited is None:
+                typer.echo("Edit cancelled; no changes applied.")
+                raise typer.Exit(code=0)
+            try:
+                updated_payload = yaml.safe_load(edited) or {}
+            except yaml.YAMLError as exc:
+                typer.echo(f"Failed to parse edited mission: {exc}")
+                raise typer.Exit(code=1) from exc
+
+            if not isinstance(updated_payload, dict):
+                typer.echo("Edited content must be a mapping.")
+                raise typer.Exit(code=1)
+
+            for field_name in ("name", "sprint_id", "status", "completed_at", "notes"):
+                if field_name not in updated_payload:
+                    continue
+                value = updated_payload[field_name]
+                if field_name == "status" and value is not None:
+                    updates["status"] = _normalize_status_input(str(value))
+                elif field_name == "sprint_id":
+                    updates["sprint_id"] = _optional_str(str(value) if value is not None else None)
+                elif field_name == "completed_at":
+                    updates["completed_at"] = _optional_str(str(value) if value is not None else None)
+                elif field_name == "notes":
+                    updates["notes"] = _optional_str(str(value) if value is not None else None)
+                elif field_name == "name":
+                    updates["name"] = str(value).strip() if value is not None else ""
+
+        if not updates:
+            typer.echo("No changes detected.")
+            raise typer.Exit(code=0)
+
+        try:
+            updated = db_commands.update_mission(conn, mission_id=mission.id, **updates)
+        except ValueError as exc:
+            typer.echo(str(exc))
+            raise typer.Exit(code=1) from exc
+
+    typer.echo(f"Mission {updated.id} updated.")
+
+
+@mission_app.command("verify")
+def mission_verify(ctx: typer.Context) -> None:
+    db_path = _ensure_context(ctx)
+    with db_commands.connect(db_path) as conn:
+        issues = db_commands.collect_mission_issues(conn)
+
+    if not issues:
+        typer.echo("All missions verified.")
+        raise typer.Exit(code=0)
+
+    error_count = 0
+    for issue in issues:
+        prefix = issue.severity.upper()
+        typer.echo(f"[{prefix}] {issue.mission.id} ({issue.field}) - {issue.message}")
+        if issue.severity.lower() == "error":
+            error_count += 1
+
+    if error_count:
+        raise typer.Exit(code=1)
+
+
+@mission_app.command("incomplete")
+def mission_incomplete(ctx: typer.Context) -> None:
+    db_path = _ensure_context(ctx)
+    with db_commands.connect(db_path) as conn:
+        results = db_commands.find_incomplete_missions(conn)
+
+    if not results:
+        typer.echo("No incomplete missions found.")
+        return
+
+    for mission, issues in results:
+        typer.echo(f"{mission.id} [{mission.status}] - {mission.name}")
+        for issue in issues:
+            typer.echo(f"  - ({issue.field}) {issue.message}")
+
+
+@mission_app.command("audit")
+def mission_audit(
+    ctx: typer.Context,
+    sprint: str | None = typer.Argument(
+        None, help="Sprint identifier to audit (default: all sprints)"
+    ),
+) -> None:
+    db_path = _ensure_context(ctx)
+    with db_commands.connect(db_path) as conn:
+        missions = db_commands.list_missions(conn)
+        issues = db_commands.collect_mission_issues(conn)
+
+    if not missions:
+        typer.echo("No missions found.")
+        raise typer.Exit(code=0)
+
+    sprint_map: dict[str, list[db_commands.Mission]] = {}
+    sprint_order: list[str] = []
+    for mission in missions:
+        key = mission.sprint_id or "Unassigned"
+        if key not in sprint_map:
+            sprint_map[key] = []
+            sprint_order.append(key)
+        sprint_map[key].append(mission)
+
+    if sprint:
+        if sprint not in sprint_map:
+            typer.echo(f"Sprint '{sprint}' not found.")
+            raise typer.Exit(code=1)
+        sprint_sequence = [sprint]
+    else:
+        sprint_sequence = sprint_order
+
+    issues_by_sprint: dict[str, list[db_commands.MissionIssue]] = defaultdict(list)
+    for issue in issues:
+        key = issue.mission.sprint_id or "Unassigned"
+        issues_by_sprint[key].append(issue)
+
+    for index, sprint_id in enumerate(sprint_sequence):
+        if index:
+            typer.echo("")
+
+        missions_in_sprint = sprint_map[sprint_id]
+        typer.echo(f"Sprint: {sprint_id} ({len(missions_in_sprint)} missions)")
+
+        status_counts = Counter(m.status for m in missions_in_sprint)
+        counts_line = ", ".join(
+            f"{status}: {status_counts.get(status, 0)}" for status in db_commands.MISSION_STATUSES
+        )
+        typer.echo(f"  Statuses: {counts_line}")
+
+        active = next((m for m in missions_in_sprint if m.status == "In Progress"), None)
+        if active is None:
+            active = next((m for m in missions_in_sprint if m.status == "Current"), None)
+        if active:
+            typer.echo(f"  Active: {active.id} [{active.status}] - {active.name}")
+        else:
+            typer.echo("  Active: None")
+
+        next_queued = next((m for m in missions_in_sprint if m.status == "Queued"), None)
+        if next_queued:
+            typer.echo(f"  Next queued: {next_queued.id} - {next_queued.name}")
+        else:
+            typer.echo("  Next queued: None")
+
+        sprint_issues = issues_by_sprint.get(sprint_id, [])
+        if sprint_issues:
+            typer.echo("  Issues:")
+            for issue in sprint_issues:
+                typer.echo(f"    - {issue.mission.id} ({issue.field}): {issue.message}")
+        else:
+            typer.echo("  Issues: none")
 
 
 @mission_app.command("next")
@@ -248,6 +558,8 @@ def mission_add(
         help="Initial mission status (default: Queued)",
     ),
 ) -> None:
+    normalized_status = _normalize_status_input(status)
+
     db_path = _ensure_context(ctx)
     with db_commands.connect(db_path) as conn:
         try:
@@ -256,13 +568,13 @@ def mission_add(
                 mission_id=mission_id,
                 name=name,
                 sprint_id=sprint_id,
-                status=status,
+                status=normalized_status,
             )
         except (ValueError, sqlite3.IntegrityError) as exc:
             typer.echo(f"Failed to add mission: {exc}")
             raise typer.Exit(code=1) from exc
 
-    typer.echo(f"Mission {mission_id} added with status {status}.")
+    typer.echo(f"Mission {mission_id} added with status {normalized_status}.")
 
 
 @session_app.command("log")

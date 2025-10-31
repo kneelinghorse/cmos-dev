@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -40,6 +41,15 @@ class Session:
     agent: str | None
     summary: str | None
     details: str | None
+
+
+@dataclass(slots=True)
+class MissionIssue:
+    mission: Mission
+    field: str
+    severity: str
+    message: str
+    kind: str
 
 
 def init_database(db_path: Path | str = DEFAULT_DB_PATH, *, force: bool = False) -> Path:
@@ -110,6 +120,137 @@ def list_missions(conn: sqlite3.Connection) -> list[Mission]:
         """
     ).fetchall()
     return [Mission(**dict(row)) for row in rows]
+
+
+def _detect_mission_issues(missions: Sequence[Mission]) -> list[MissionIssue]:
+    issues: list[MissionIssue] = []
+    status_map: dict[str, list[Mission]] = defaultdict(list)
+
+    for mission in missions:
+        status_value = (mission.status or "").strip()
+        status_map[status_value].append(mission)
+
+        name_value = (mission.name or "").strip()
+        if not name_value:
+            issues.append(
+                MissionIssue(
+                    mission=mission,
+                    field="name",
+                    severity="error",
+                    message="Mission name is missing.",
+                    kind="missing_field",
+                )
+            )
+
+        sprint_value = (mission.sprint_id or "").strip()
+        if not sprint_value:
+            issues.append(
+                MissionIssue(
+                    mission=mission,
+                    field="sprint_id",
+                    severity="error",
+                    message="Sprint identifier is missing.",
+                    kind="missing_field",
+                )
+            )
+
+        if not status_value:
+            issues.append(
+                MissionIssue(
+                    mission=mission,
+                    field="status",
+                    severity="error",
+                    message="Mission status is missing.",
+                    kind="missing_field",
+                )
+            )
+            continue
+
+        if status_value not in MISSION_STATUSES:
+            issues.append(
+                MissionIssue(
+                    mission=mission,
+                    field="status",
+                    severity="error",
+                    message=f"Mission status '{mission.status}' is invalid.",
+                    kind="invalid_value",
+                )
+            )
+
+        if status_value == "Completed":
+            completed_value = (mission.completed_at or "").strip()
+            if not completed_value:
+                issues.append(
+                    MissionIssue(
+                        mission=mission,
+                        field="completed_at",
+                        severity="error",
+                        message="Completed mission is missing a completed_at timestamp.",
+                        kind="missing_field",
+                    )
+                )
+        else:
+            if mission.completed_at and mission.completed_at.strip():
+                issues.append(
+                    MissionIssue(
+                        mission=mission,
+                        field="completed_at",
+                        severity="warning",
+                        message="Non-completed mission has a completed_at timestamp.",
+                        kind="inconsistent",
+                    )
+                )
+
+        if status_value == "Blocked":
+            notes_value = (mission.notes or "").strip()
+            if not notes_value:
+                issues.append(
+                    MissionIssue(
+                        mission=mission,
+                        field="notes",
+                        severity="error",
+                        message="Blocked mission must include notes explaining the blocker.",
+                        kind="missing_field",
+                    )
+                )
+
+    for status_label in ("In Progress", "Current"):
+        missions_with_status = status_map.get(status_label, [])
+        if len(missions_with_status) > 1:
+            for mission in missions_with_status:
+                issues.append(
+                    MissionIssue(
+                        mission=mission,
+                        field="status",
+                        severity="error",
+                        message=f"Multiple missions are marked '{status_label}'.",
+                        kind="conflict",
+                    )
+                )
+
+    return issues
+
+
+def collect_mission_issues(conn: sqlite3.Connection) -> list[MissionIssue]:
+    missions = list_missions(conn)
+    return _detect_mission_issues(missions)
+
+
+def find_incomplete_missions(
+    conn: sqlite3.Connection,
+) -> list[tuple[Mission, list[MissionIssue]]]:
+    issues = collect_mission_issues(conn)
+    grouped: dict[str, list[MissionIssue]] = defaultdict(list)
+
+    for issue in issues:
+        if issue.kind in {"missing_field", "invalid_value"}:
+            grouped[issue.mission.id].append(issue)
+
+    results: list[tuple[Mission, list[MissionIssue]]] = []
+    for mission_id, items in grouped.items():
+        mission = items[0].mission
+        results.append((mission, items))
+    return results
 
 
 def get_mission(conn: sqlite3.Connection, mission_id: str) -> Mission | None:
@@ -281,6 +422,48 @@ def mark_in_progress(conn: sqlite3.Connection, *, mission_id: str) -> None:
         (mission_id,),
     )
     conn.commit()
+
+
+def update_mission(conn: sqlite3.Connection, *, mission_id: str, **fields: Any) -> Mission:
+    mission = get_mission(conn, mission_id)
+    if mission is None:
+        raise ValueError(f"Mission '{mission_id}' not found.")
+
+    if not fields:
+        return mission
+
+    allowed_fields = {"name", "sprint_id", "status", "notes", "completed_at"}
+    updates: dict[str, Any] = {}
+    for key, value in fields.items():
+        if key not in allowed_fields:
+            raise ValueError(f"Unsupported field '{key}' for mission updates.")
+        if key == "status":
+            if value is None:
+                raise ValueError("Mission status cannot be set to null.")
+            normalized = str(value).strip()
+            if normalized not in MISSION_STATUSES:
+                raise ValueError(f"Unsupported status '{value}'. Expected one of {', '.join(MISSION_STATUSES)}.")
+            updates[key] = normalized
+        else:
+            updates[key] = value
+
+    if not updates:
+        return mission
+
+    assignments = ", ".join(f"{column} = ?" for column in updates)
+    params = list(updates.values())
+    params.append(mission_id)
+
+    conn.execute(
+        f"""
+        UPDATE missions
+        SET {assignments}
+        WHERE id = ?
+        """,
+        params,
+    )
+    conn.commit()
+    return get_mission(conn, mission_id)
 
 
 def utc_now_iso() -> str:

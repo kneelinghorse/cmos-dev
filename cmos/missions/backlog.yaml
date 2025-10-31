@@ -59,10 +59,12 @@ domainFields:
       notes: Export/import + status/context commands delivered
     - id: B1.5
       name: Auditability Commands
-      status: Current
+      status: Completed
+      completed_at: '2025-10-31T21:57:53Z'
+      notes: Auditability commands delivered via cmosctl QA suite
     - id: B1.6
       name: Sprint Review & Planning
-      status: Queued
+      status: Current
   - sprintId: Sprint 2
     title: Memory & KB (Optional)
     focus: Systematic knowledge capture for better sprint transitions
