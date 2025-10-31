@@ -6,9 +6,10 @@ import os
 import sqlite3
 import sys
 import textwrap
-from collections import Counter
+from collections import Counter, defaultdict
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Sequence
 
 import typer
 import yaml
@@ -20,11 +21,13 @@ mission_app = typer.Typer(help="Mission management commands", add_completion=Fal
 db_app = typer.Typer(help="Database maintenance commands", add_completion=False)
 session_app = typer.Typer(help="Session logging commands", add_completion=False)
 hook_app = typer.Typer(help="Git hook utilities", add_completion=False)
+export_app = typer.Typer(help="Export data to human-readable files", add_completion=False)
 
 app.add_typer(db_app, name="db")
 app.add_typer(mission_app, name="mission")
 app.add_typer(session_app, name="session")
 app.add_typer(hook_app, name="hook")
+app.add_typer(export_app, name="export")
 
 STATUS_NORMALIZATION = {
     "Queued": "Queued",
@@ -34,6 +37,25 @@ STATUS_NORMALIZATION = {
     "Blocked": "Blocked",
     "Planned": "Queued",
 }
+
+SESSION_STATUS_FROM_ACTION = {
+    "start": "in_progress",
+    "complete": "completed",
+    "blocked": "blocked",
+    "commit": "commit",
+}
+
+DEFAULT_BACKLOG_PATH = Path("cmos/missions/backlog.yaml")
+DEFAULT_SESSIONS_PATH = Path("cmos/SESSIONS.jsonl")
+DEFAULT_PROJECT_CONTEXT_PATH = Path("cmos/PROJECT_CONTEXT.json")
+
+
+@dataclass(slots=True)
+class BacklogTemplate:
+    header: str
+    docs: list[dict[str, Any]]
+    sprint_order: list[str]
+    sprint_map: dict[str, dict[str, Any]]
 
 
 def _ensure_context(ctx: typer.Context) -> Path:
@@ -538,6 +560,612 @@ def _load_missions_from_backlog(backlog_path: Path) -> list[dict[str, str | None
                     )
 
     return missions
+
+
+def _extract_header(text: str) -> str:
+    header_lines: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("#"):
+            header_lines.append(line)
+        else:
+            break
+    return "\n".join(header_lines)
+
+
+def _load_backlog_template(backlog_path: Path) -> BacklogTemplate:
+    if not backlog_path.exists():
+        raise FileNotFoundError(f"Backlog file not found at {backlog_path}")
+
+    raw_text = backlog_path.read_text(encoding="utf-8")
+    header = _extract_header(raw_text)
+    docs = list(yaml.safe_load_all(raw_text))
+    if not docs:
+        raise ValueError(f"Backlog file at {backlog_path} is empty.")
+    if len(docs) < 2:
+        docs.append({})
+
+    sprint_map: dict[str, dict[str, Any]] = {}
+    sprint_order: list[str] = []
+    second_doc = docs[1] if isinstance(docs[1], dict) else {}
+    domain_fields = second_doc.get("domainFields") if isinstance(second_doc, dict) else {}
+    if isinstance(domain_fields, dict):
+        for sprint in domain_fields.get("sprints") or []:
+            if not isinstance(sprint, dict):
+                continue
+            sprint_id = sprint.get("sprintId")
+            if sprint_id and sprint_id not in sprint_map:
+                sprint_map[sprint_id] = sprint
+                sprint_order.append(sprint_id)
+
+    return BacklogTemplate(header=header, docs=docs, sprint_order=sprint_order, sprint_map=sprint_map)
+
+
+def _derive_sprint_status(original_status: str | None, mission_statuses: Sequence[str | None]) -> str:
+    statuses = {status for status in mission_statuses if status}
+    if not statuses:
+        return original_status or "Queued"
+    if statuses == {"Completed"}:
+        return "Completed"
+    if "Blocked" in statuses:
+        return "Blocked"
+    if "In Progress" in statuses:
+        return "In Progress"
+    if "Current" in statuses:
+        return "Current"
+    if statuses == {"Queued"}:
+        if original_status and original_status.lower() == "planned":
+            return original_status
+        return "Queued"
+    if statuses == {"Completed", "Queued"}:
+        return "In Progress"
+    return original_status or "In Progress"
+
+
+def _apply_missions_to_backlog(template: BacklogTemplate, missions: Sequence[db_commands.Mission]) -> None:
+    if not template.docs:
+        return
+
+    if len(template.docs) < 2 or not isinstance(template.docs[1], dict):
+        template.docs.append({"domainFields": {"sprints": []}})
+    second_doc = template.docs[1]
+    if not isinstance(second_doc, dict):
+        second_doc = {}
+        template.docs[1] = second_doc
+
+    domain_fields = second_doc.setdefault("domainFields", {})
+    if not isinstance(domain_fields, dict):
+        domain_fields = {}
+        second_doc["domainFields"] = domain_fields
+
+    sprints_list = domain_fields.setdefault("sprints", [])
+    if not isinstance(sprints_list, list):
+        sprints_list = []
+        domain_fields["sprints"] = sprints_list
+
+    mission_entry_map: dict[str, dict[str, Any]] = {}
+    for sprint in sprints_list:
+        if not isinstance(sprint, dict):
+            continue
+        sprint_id = sprint.get("sprintId")
+        if sprint_id and sprint_id not in template.sprint_map:
+            template.sprint_map[sprint_id] = sprint
+        if sprint_id and sprint_id not in template.sprint_order:
+            template.sprint_order.append(sprint_id)
+        missions_list = sprint.setdefault("missions", [])
+        if not isinstance(missions_list, list):
+            missions_list = []
+            sprint["missions"] = missions_list
+        for item in missions_list:
+            if isinstance(item, dict):
+                mission_id = item.get("id")
+                if mission_id:
+                    mission_entry_map[mission_id] = item
+
+    mission_status_lookup = {mission.id: mission.status for mission in missions}
+
+    for mission in missions:
+        sprint_id = mission.sprint_id or "Unassigned"
+        sprint = template.sprint_map.get(sprint_id)
+        if sprint is None:
+            sprint = {
+                "sprintId": sprint_id,
+                "title": mission.sprint_id or sprint_id,
+                "focus": "",
+                "status": "Queued",
+                "missions": [],
+            }
+            sprints_list.append(sprint)
+            template.sprint_map[sprint_id] = sprint
+        if sprint_id not in template.sprint_order:
+            template.sprint_order.append(sprint_id)
+
+        missions_list = sprint.setdefault("missions", [])
+        if not isinstance(missions_list, list):
+            missions_list = []
+            sprint["missions"] = missions_list
+
+        mission_entry = mission_entry_map.get(mission.id)
+        if mission_entry is None:
+            mission_entry = {"id": mission.id, "name": mission.name}
+            missions_list.append(mission_entry)
+            mission_entry_map[mission.id] = mission_entry
+        else:
+            mission_entry["name"] = mission.name
+
+        mission_entry["status"] = mission.status
+        if mission.completed_at:
+            mission_entry["completed_at"] = mission.completed_at
+        else:
+            mission_entry.pop("completed_at", None)
+
+        if mission.notes:
+            mission_entry["notes"] = mission.notes
+        else:
+            mission_entry.pop("notes", None)
+
+    for sprint in sprints_list:
+        missions_list = sprint.get("missions") or []
+        statuses = [
+            mission_status_lookup.get(item.get("id"), item.get("status"))
+            for item in missions_list
+            if isinstance(item, dict)
+        ]
+        sprint["status"] = _derive_sprint_status(sprint.get("status"), statuses)
+
+
+def _parse_details_field(details: str | None) -> Any:
+    if details is None:
+        return None
+    text = details.strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return text
+
+
+def _session_to_export_record(session: db_commands.Session) -> dict[str, Any]:
+    record: dict[str, Any] = {
+        "ts": session.ts,
+        "action": session.action,
+        "status": SESSION_STATUS_FROM_ACTION.get(session.action, session.action),
+    }
+    if session.mission_id:
+        record["mission"] = session.mission_id
+    if session.agent:
+        record["agent"] = session.agent
+    if session.summary:
+        record["summary"] = session.summary
+    details = _parse_details_field(session.details)
+    if details is not None:
+        record["details"] = details
+    return record
+
+
+def _load_sessions_from_jsonl(source: Path) -> list[dict[str, Any]]:
+    if not source.exists():
+        raise FileNotFoundError(f"Sessions file not found at {source}")
+
+    sessions: list[dict[str, Any]] = []
+    with source.open("r", encoding="utf-8") as handle:
+        for index, line in enumerate(handle, start=1):
+            text = line.strip()
+            if not text:
+                continue
+            try:
+                payload = json.loads(text)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"Invalid JSON on line {index}: {exc}") from exc
+            if not isinstance(payload, dict):
+                raise ValueError(f"Line {index} does not contain a JSON object.")
+            sessions.append(payload)
+    return sessions
+
+
+def _mission_summary(mission: db_commands.Mission | None) -> dict[str, Any] | None:
+    if mission is None:
+        return None
+    return {
+        "id": mission.id,
+        "name": mission.name,
+        "status": mission.status,
+        "sprint": mission.sprint_id,
+        "completed_at": mission.completed_at,
+        "notes": mission.notes,
+    }
+
+
+def _build_status_snapshot(
+    db_path: Path,
+    *,
+    backlog_path: Path | None = None,
+    recent_limit: int = 5,
+) -> dict[str, Any]:
+    with db_commands.connect(db_path) as conn:
+        missions = db_commands.list_missions(conn)
+        active_mission = db_commands.get_in_progress_mission(conn)
+        current_mission = active_mission or db_commands.get_current_mission(conn)
+        next_candidate = db_commands.get_next_queued_mission(conn)
+        sessions = db_commands.list_sessions(conn)
+
+    template: BacklogTemplate | None = None
+    if backlog_path and backlog_path.exists():
+        try:
+            template = _load_backlog_template(backlog_path)
+        except (FileNotFoundError, ValueError):
+            template = None
+
+    sprint_meta: dict[str, dict[str, Any]] = {}
+    sprint_order: list[str] = []
+    if template is not None:
+        sprint_order = list(template.sprint_order)
+        for sprint_id, sprint in template.sprint_map.items():
+            sprint_meta[sprint_id] = {
+                "title": sprint.get("title"),
+                "focus": sprint.get("focus"),
+                "status": sprint.get("status"),
+            }
+
+    mission_groups: dict[str, list[db_commands.Mission]] = defaultdict(list)
+    for mission in missions:
+        sprint_id = mission.sprint_id or "Unassigned"
+        mission_groups[sprint_id].append(mission)
+        if sprint_id not in sprint_meta:
+            sprint_meta[sprint_id] = {
+                "title": mission.sprint_id or sprint_id,
+                "focus": None,
+                "status": None,
+            }
+        if sprint_id not in sprint_order:
+            sprint_order.append(sprint_id)
+
+    totals = Counter(mission.status for mission in missions)
+    sprint_summaries: list[dict[str, Any]] = []
+    for sprint_id in sprint_order:
+        bucket = mission_groups.get(sprint_id, [])
+        counts = Counter(m.status for m in bucket)
+        aggregated_status = _derive_sprint_status(
+            sprint_meta.get(sprint_id, {}).get("status"),
+            [mission.status for mission in bucket],
+        )
+        sprint_summaries.append(
+            {
+                "sprint_id": sprint_id,
+                "title": sprint_meta.get(sprint_id, {}).get("title"),
+                "focus": sprint_meta.get(sprint_id, {}).get("focus"),
+                "status": aggregated_status,
+                "counts": dict(counts),
+                "missions": [
+                    {
+                        "id": mission.id,
+                        "name": mission.name,
+                        "status": mission.status,
+                        "completed_at": mission.completed_at,
+                        "notes": mission.notes,
+                    }
+                    for mission in bucket
+                ],
+            }
+        )
+
+    sessions_sorted = sorted(sessions, key=lambda entry: (entry.ts, entry.id), reverse=True)
+    recent_sessions = [
+        {
+            "id": entry.id,
+            "ts": entry.ts,
+            "mission": entry.mission_id,
+            "action": entry.action,
+            "status": SESSION_STATUS_FROM_ACTION.get(entry.action, entry.action),
+            "agent": entry.agent,
+            "summary": entry.summary,
+        }
+        for entry in sessions_sorted[: recent_limit if recent_limit > 0 else None]
+    ]
+
+    next_mission = next_candidate
+    if current_mission and next_candidate and current_mission.id == next_candidate.id:
+        next_mission = None
+
+    return {
+        "generated_at": db_commands.utc_now_iso(),
+        "totals": {
+            "missions": len(missions),
+            "sessions": len(sessions),
+            "by_status": dict(totals),
+        },
+        "active_mission": _mission_summary(active_mission),
+        "current_mission": _mission_summary(current_mission),
+        "next_mission": _mission_summary(next_mission),
+        "sprints": sprint_summaries,
+        "recent_sessions": recent_sessions,
+    }
+
+
+def _export_backlog_file(
+    db_path: Path,
+    *,
+    output: Path,
+    template_path: Path,
+) -> int:
+    template = _load_backlog_template(template_path)
+    with db_commands.connect(db_path) as conn:
+        missions = db_commands.list_missions(conn)
+
+    _apply_missions_to_backlog(template, missions)
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8") as handle:
+        if template.header:
+            handle.write(template.header.rstrip() + "\n")
+        yaml.safe_dump_all(template.docs, handle, sort_keys=False)
+    return len(missions)
+
+
+def _export_sessions_file(
+    db_path: Path,
+    *,
+    output: Path,
+) -> int:
+    with db_commands.connect(db_path) as conn:
+        sessions = db_commands.list_sessions(conn)
+
+    sessions_sorted = sorted(sessions, key=lambda entry: (entry.ts, entry.id))
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8") as handle:
+        for session in sessions_sorted:
+            record = _session_to_export_record(session)
+            json.dump(record, handle, ensure_ascii=False)
+            handle.write("\n")
+    return len(sessions_sorted)
+
+
+@export_app.command("backlog")
+def export_backlog(
+    ctx: typer.Context,
+    output: Path = typer.Option(
+        DEFAULT_BACKLOG_PATH,
+        "--output",
+        "-o",
+        help="Destination for the exported backlog YAML file (default: cmos/missions/backlog.yaml)",
+    ),
+    template: Path = typer.Option(
+        DEFAULT_BACKLOG_PATH,
+        "--template",
+        "-t",
+        help="Backlog template used for metadata (default: cmos/missions/backlog.yaml)",
+    ),
+) -> None:
+    db_path = _ensure_context(ctx)
+    try:
+        mission_count = _export_backlog_file(db_path, output=output, template_path=template)
+    except (FileNotFoundError, ValueError) as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"Exported {mission_count} missions to {output}")
+
+
+@export_app.command("sessions")
+def export_sessions(
+    ctx: typer.Context,
+    output: Path = typer.Option(
+        DEFAULT_SESSIONS_PATH,
+        "--output",
+        "-o",
+        help="Destination for the exported sessions JSONL file (default: cmos/SESSIONS.jsonl)",
+    ),
+) -> None:
+    db_path = _ensure_context(ctx)
+    session_count = _export_sessions_file(db_path, output=output)
+    typer.echo(f"Exported {session_count} sessions to {output}")
+
+
+@export_app.command("all")
+def export_all(
+    ctx: typer.Context,
+    backlog_output: Path = typer.Option(
+        DEFAULT_BACKLOG_PATH,
+        "--backlog-output",
+        help="Destination for backlog YAML export (default: cmos/missions/backlog.yaml)",
+    ),
+    sessions_output: Path = typer.Option(
+        DEFAULT_SESSIONS_PATH,
+        "--sessions-output",
+        help="Destination for sessions JSONL export (default: cmos/SESSIONS.jsonl)",
+    ),
+    template: Path = typer.Option(
+        DEFAULT_BACKLOG_PATH,
+        "--template",
+        "-t",
+        help="Backlog template used for metadata (default: cmos/missions/backlog.yaml)",
+    ),
+) -> None:
+    db_path = _ensure_context(ctx)
+    try:
+        mission_count = _export_backlog_file(db_path, output=backlog_output, template_path=template)
+    except (FileNotFoundError, ValueError) as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(code=1) from exc
+    session_count = _export_sessions_file(db_path, output=sessions_output)
+    typer.echo(
+        f"Exported backlog ({mission_count} missions) to {backlog_output} "
+        f"and sessions ({session_count} entries) to {sessions_output}"
+    )
+
+
+@db_app.command("import")
+def db_import(
+    ctx: typer.Context,
+    source: Path = typer.Argument(..., help="Exported backlog (.yaml/.yml) or sessions (.jsonl) file to import"),
+) -> None:
+    if not source.exists():
+        typer.echo(f"File not found: {source}")
+        raise typer.Exit(code=1)
+
+    db_path = _ensure_context(ctx)
+    suffix = source.suffix.lower()
+
+    if suffix in {".yaml", ".yml"}:
+        try:
+            missions = _load_missions_from_backlog(source)
+        except (FileNotFoundError, ValueError) as exc:
+            typer.echo(str(exc))
+            raise typer.Exit(code=1) from exc
+        if not missions:
+            typer.echo("No missions found in backlog file; database not modified.")
+            raise typer.Exit(code=1)
+        with db_commands.connect(db_path) as conn:
+            db_commands.replace_missions(conn, missions)
+        typer.echo(f"Imported {len(missions)} missions from {source}")
+        return
+
+    if suffix == ".jsonl":
+        try:
+            sessions = _load_sessions_from_jsonl(source)
+        except (FileNotFoundError, ValueError) as exc:
+            typer.echo(str(exc))
+            raise typer.Exit(code=1) from exc
+        if not sessions:
+            typer.echo("No sessions found in JSONL file; database not modified.")
+            raise typer.Exit(code=1)
+        try:
+            with db_commands.connect(db_path) as conn:
+                db_commands.replace_sessions(conn, sessions)
+        except ValueError as exc:
+            typer.echo(f"Failed to import sessions: {exc}")
+            raise typer.Exit(code=1) from exc
+        typer.echo(f"Imported {len(sessions)} sessions from {source}")
+        return
+
+    typer.echo("Unsupported file type. Provide a .yaml/.yml backlog or .jsonl sessions file.")
+    raise typer.Exit(code=1)
+
+
+@app.command("status")
+def status_command(
+    ctx: typer.Context,
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show mission breakdown for each sprint."),
+    backlog: Path = typer.Option(
+        DEFAULT_BACKLOG_PATH,
+        "--backlog",
+        help="Backlog template for sprint metadata (default: cmos/missions/backlog.yaml)",
+    ),
+    recent: int = typer.Option(5, "--recent", help="Number of recent sessions to summarize (default: 5)"),
+) -> None:
+    db_path = _ensure_context(ctx)
+    backlog_path = backlog if backlog.exists() else None
+    snapshot = _build_status_snapshot(db_path, backlog_path=backlog_path, recent_limit=recent)
+
+    active = snapshot["active_mission"]
+    current = snapshot["current_mission"]
+    next_mission = snapshot["next_mission"]
+
+    if active:
+        typer.echo(f"Active mission: {active['id']} [{active['status']}] - {active['name']}")
+    elif current:
+        typer.echo(f"Current mission: {current['id']} [{current['status']}] - {current['name']}")
+    else:
+        typer.echo("No mission is currently active.")
+
+    if next_mission:
+        typer.echo(f"Next mission: {next_mission['id']} [{next_mission['status']}] - {next_mission['name']}")
+
+    totals = snapshot["totals"]
+    counts_summary = ", ".join(f"{status}: {count}" for status, count in sorted(totals["by_status"].items()))
+    if counts_summary:
+        typer.echo(f"Missions total: {totals['missions']} ({counts_summary})")
+    else:
+        typer.echo(f"Missions total: {totals['missions']}")
+    typer.echo(f"Sessions logged: {totals['sessions']}")
+
+    typer.echo("Sprint overview:")
+    for sprint in snapshot["sprints"]:
+        title = sprint["title"] or sprint["sprint_id"]
+        counts = sprint["counts"]
+        counts_str = ", ".join(f"{status}: {count}" for status, count in sorted(counts.items()))
+        summary_line = f"- {sprint['sprint_id']} ({title}) [{sprint['status']}]"
+        if counts_str:
+            summary_line += f" {counts_str}"
+        typer.echo(summary_line)
+        if verbose:
+            for mission in sprint["missions"]:
+                details = f"    • {mission['id']} [{mission['status']}] {mission['name']}"
+                if mission["status"] == "Completed" and mission.get("completed_at"):
+                    details += f" (completed {mission['completed_at']})"
+                elif mission["status"] == "Blocked" and mission.get("notes"):
+                    details += f" – {mission['notes']}"
+                typer.echo(details)
+
+    if verbose and snapshot["recent_sessions"]:
+        typer.echo("Recent sessions:")
+        for session in snapshot["recent_sessions"]:
+            summary = session.get("summary") or "-"
+            mission_id = session.get("mission") or "-"
+            typer.echo(f"  - [{session['ts']}] {session['action']} {mission_id}: {summary}")
+
+
+@app.command("context")
+def context_command(
+    ctx: typer.Context,
+    backlog: Path = typer.Option(
+        DEFAULT_BACKLOG_PATH,
+        "--backlog",
+        help="Backlog template for sprint metadata (default: cmos/missions/backlog.yaml)",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Optional destination file for context JSON (default: print to stdout)",
+    ),
+    recent: int = typer.Option(5, "--recent", help="Number of recent sessions to include (default: 5)"),
+) -> None:
+    db_path = _ensure_context(ctx)
+    backlog_path = backlog if backlog.exists() else None
+    snapshot = _build_status_snapshot(db_path, backlog_path=backlog_path, recent_limit=recent)
+
+    project_context: dict[str, Any] = {}
+    if DEFAULT_PROJECT_CONTEXT_PATH.exists():
+        try:
+            with DEFAULT_PROJECT_CONTEXT_PATH.open("r", encoding="utf-8") as handle:
+                project_context = json.load(handle)
+        except json.JSONDecodeError:
+            project_context = {}
+
+    payload: dict[str, Any] = {
+        "generated_at": snapshot["generated_at"],
+        "project": project_context.get("project"),
+        "active_mission": snapshot["active_mission"],
+        "current_mission": snapshot["current_mission"],
+        "next_mission": snapshot["next_mission"],
+        "mission_totals": snapshot["totals"],
+        "sprints": [
+            {
+                "sprint_id": sprint["sprint_id"],
+                "title": sprint["title"],
+                "focus": sprint["focus"],
+                "status": sprint["status"],
+                "counts": sprint["counts"],
+            }
+            for sprint in snapshot["sprints"]
+        ],
+        "recent_sessions": snapshot["recent_sessions"],
+    }
+
+    if "working_memory" in project_context:
+        payload["working_memory"] = project_context["working_memory"]
+    if "technical_context" in project_context:
+        payload["technical_context"] = project_context["technical_context"]
+    if "ai_instructions" in project_context:
+        payload["ai_instructions"] = project_context["ai_instructions"]
+
+    json_output = json.dumps(payload, ensure_ascii=False, indent=2)
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json_output + "\n", encoding="utf-8")
+        typer.echo(f"Wrote context to {output}")
+    else:
+        typer.echo(json_output)
 
 
 @mission_app.command("sync-backlog")

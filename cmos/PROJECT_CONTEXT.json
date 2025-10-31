@@ -13,9 +13,9 @@
   },
   "working_memory": {
     "active_domain": "main",
-    "session_count": 3,
-    "last_session": "2025-10-31T21:09:09Z",
-    "last_mission": "B1.3",
+    "session_count": 4,
+    "last_session": "2025-10-31T21:41:21Z",
+    "last_mission": "B1.4",
     "domains": {
       "main": {
         "status": "active",

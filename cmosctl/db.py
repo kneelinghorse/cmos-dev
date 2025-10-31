@@ -4,12 +4,13 @@ Database helper routines used by the CLI.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator, Sequence
+from typing import Any, Iterator, Sequence
 
 from cmos_core import schema
 from cmos_core.migrations import migration_manager
@@ -297,6 +298,25 @@ def _normalize_session_action(action: str) -> str:
     return normalized
 
 
+def _status_to_action(status: str | None) -> str | None:
+    if status is None:
+        return None
+    normalized = status.strip().lower()
+    mapping = {
+        "in_progress": "start",
+        "started": "start",
+        "start": "start",
+        "complete": "complete",
+        "completed": "complete",
+        "done": "complete",
+        "blocked": "blocked",
+        "commit": "commit",
+        "committed": "commit",
+        "commit_logged": "commit",
+    }
+    return mapping.get(normalized, normalized if normalized in SESSION_ACTIONS else None)
+
+
 def log_session(
     conn: sqlite3.Connection,
     *,
@@ -367,4 +387,100 @@ def replace_missions(
         """,
         missions,
     )
+    conn.commit()
+
+
+def replace_sessions(
+    conn: sqlite3.Connection,
+    sessions: Sequence[dict[str, Any]],
+) -> None:
+    """
+    Replace all session rows with the provided collection.
+    """
+    normalized_rows: list[dict[str, Any]] = []
+    for index, session in enumerate(sessions, start=1):
+        if not isinstance(session, dict):
+            raise ValueError(f"Session entry #{index} is not a JSON object.")
+
+        ts_raw = session.get("ts")
+        if ts_raw is None:
+            raise ValueError(f"Session entry #{index} is missing 'ts'.")
+        ts_value = str(ts_raw).strip()
+        if not ts_value:
+            raise ValueError(f"Session entry #{index} has an empty 'ts' value.")
+
+        action_raw = session.get("action") or _status_to_action(session.get("status"))
+        if not action_raw:
+            raise ValueError(f"Session entry #{index} is missing 'action'.")
+        action_value = _normalize_session_action(str(action_raw))
+
+        mission_raw = session.get("mission_id") or session.get("mission")
+        if mission_raw is None:
+            mission_value = None
+        elif isinstance(mission_raw, str):
+            mission_value = mission_raw.strip() or None
+        else:
+            mission_value = str(mission_raw).strip() or None
+
+        agent_raw = session.get("agent")
+        if agent_raw is None:
+            agent_value = None
+        elif isinstance(agent_raw, str):
+            agent_value = agent_raw.strip() or None
+        else:
+            agent_value = str(agent_raw).strip() or None
+
+        summary_raw = session.get("summary")
+        if summary_raw is None:
+            summary_value = None
+        elif isinstance(summary_raw, str):
+            summary_value = summary_raw.strip() or None
+        else:
+            summary_value = str(summary_raw).strip() or None
+
+        details_raw = session.get("details")
+        extras = {
+            key: value
+            for key, value in session.items()
+            if key
+            not in {"ts", "mission", "mission_id", "action", "status", "agent", "summary", "details"}
+        }
+
+        if details_raw is None and extras:
+            details_candidate: Any = extras
+        elif details_raw is not None and extras:
+            if isinstance(details_raw, dict):
+                details_candidate = {**details_raw, **extras}
+            else:
+                details_candidate = {"details": details_raw, **extras}
+        else:
+            details_candidate = details_raw
+
+        if isinstance(details_candidate, (dict, list)):
+            details_value = json.dumps(details_candidate, ensure_ascii=False)
+        elif details_candidate is None:
+            details_value = None
+        else:
+            details_value = str(details_candidate).strip() or None
+
+        normalized_rows.append(
+            {
+                "ts": ts_value,
+                "mission_id": mission_value,
+                "action": action_value,
+                "agent": agent_value,
+                "summary": summary_value,
+                "details": details_value,
+            }
+        )
+
+    conn.execute("DELETE FROM sessions")
+    if normalized_rows:
+        conn.executemany(
+            """
+            INSERT INTO sessions (ts, mission_id, action, agent, summary, details)
+            VALUES (:ts, :mission_id, :action, :agent, :summary, :details)
+            """,
+            normalized_rows,
+        )
     conn.commit()
