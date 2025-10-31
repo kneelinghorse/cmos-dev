@@ -1,0 +1,80 @@
+# pack.yaml - Metadata for the "Implementation" Domain Pack
+name: "Build.Implementation.v1"
+version: "1.0.0"
+displayName: "Implementation Mission"
+description: "A mission to implement a specific, well-scoped technical component based on the findings of a prior research mission. Sized for a single, focused development session."
+author: "CMOS Team"
+schema: "./schemas/Implementation.v1.json"
+
+---
+
+# Mission File: B1.5_Auditability_Commands.yaml
+
+missionId: "B1.5"
+
+objective: "To implement auditability commands (verify, incomplete, audit, show, edit) that enable QA and manual intervention when needed."
+
+context: |
+  This is the final build mission for Sprint 1.
+  These commands address the critical auditability requirement - ensuring the DB remains inspectable and editable.
+  QA commands help identify issues, while edit commands allow manual fixes.
+  This completes the core automation MVP that eliminates manual file edits.
+
+successCriteria:
+  - "cmosctl mission verify checks all missions for completeness/issues"
+  - "cmosctl mission incomplete lists missions missing required fields"
+  - "cmosctl mission audit [sprint] audits sprint for gaps/inconsistencies"
+  - "cmosctl mission show <id> displays full mission details"
+  - "cmosctl mission edit <id> allows editing (with editor or --field flags)"
+  - "cmosctl db shell opens SQLite REPL for direct access"
+  - "All QA checks provide actionable output"
+
+deliverables:
+  - "cmosctl mission verify command"
+  - "cmosctl mission incomplete command"
+  - "cmosctl mission audit [sprint] command"
+  - "cmosctl mission show <id> command"
+  - "cmosctl mission edit <id> command (editor + --field flags)"
+  - "cmosctl db shell command (SQLite REPL)"
+  - "Validation logic for mission completeness"
+
+domainFields:
+  type: "Build.Implementation.v1"
+
+  researchFoundation:
+    - finding: "Auditability is critical - DB must remain inspectable"
+      sourceMission: "Architecture Document Section K"
+    - finding: "QA commands needed: verify completeness, find gaps"
+      sourceMission: "User requirements for mission verification"
+    - finding: "Manual editing needed for fixing issues"
+      sourceMission: "Architecture Document Section K"
+
+  implementationScope:
+    coreDeliverable: |
+      - cmosctl mission verify (checks for: missing fields, invalid statuses, orphaned records)
+      - cmosctl mission incomplete (lists missions with missing required fields)
+      - cmosctl mission audit <sprint> (checks sprint for: gaps, inconsistencies, blockers)
+      - cmosctl mission show <id> (detailed mission view with all fields)
+      - cmosctl mission edit <id> (opens $EDITOR or uses --status, --name, --notes flags)
+      - cmosctl db shell (opens sqlite3 REPL with .cmos/memory.db)
+      - Basic validation rules (required fields, status transitions)
+    outOfScope:
+      - "Complex validation rules (basic checks only)"
+      - "Interactive editing UI (editor or flags only)"
+      - "Export integration (separate command, already done)"
+
+  handoffContext:
+    completed:
+      - "All auditability commands implemented"
+      - "QA workflow enabled"
+      - "Manual intervention possible"
+      - "Sprint 1 core automation MVP complete"
+    interfaces:
+      - "CLI: cmosctl mission verify/incomplete/audit/show/edit"
+      - "CLI: cmosctl db shell"
+    assumptions:
+      - "All previous missions completed"
+      - "$EDITOR environment variable set for editor command"
+    nextMission: "Sprint 2: Memory & KB (Week 2)"
+    blockers: []
+

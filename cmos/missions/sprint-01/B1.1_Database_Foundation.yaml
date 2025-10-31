@@ -1,0 +1,73 @@
+# pack.yaml - Metadata for the "Implementation" Domain Pack
+name: "Build.Implementation.v1"
+version: "1.0.0"
+displayName: "Implementation Mission"
+description: "A mission to implement a specific, well-scoped technical component based on the findings of a prior research mission. Sized for a single, focused development session."
+author: "CMOS Team"
+schema: "./schemas/Implementation.v1.json"
+
+---
+
+# Mission File: B1.1_Database_Foundation.yaml
+
+missionId: "B1.1"
+
+objective: "To create the SQLite database foundation for CMOS v2.0, including the complete schema definition and database initialization command."
+
+context: |
+  This is the first build mission for Sprint 1 of CMOS v2.0.
+  We're building a lightweight automation layer that replaces manual flat file management with a SQLite database.
+  The schema is fully defined in cmos/docs/cmos-technical_architecture-v2-simplified.md Section B.
+  This mission establishes the foundation that all other commands will depend on.
+
+successCriteria:
+  - "SQLite schema is implemented exactly as specified in the architecture document"
+  - "cmosctl db init command creates .cmos/memory.db with all tables"
+  - "Schema includes: missions, sessions, project_state, decisions, facts tables"
+  - "KB tables (kb_sources, kb_chunks, kb_chunks_fts) are included (for Week 2)"
+  - "Migration system placeholder is in place for future schema changes"
+  - "Database file is created in hidden .cmos/ directory"
+
+deliverables:
+  - "Database schema module (cmos/core/schema.py or equivalent)"
+  - "cmosctl db init command implementation"
+  - "Basic migration system structure (for future use)"
+  - "Initial project setup structure (Python package)"
+
+domainFields:
+  type: "Build.Implementation.v1"
+
+  researchFoundation:
+    - finding: "SQLite is the chosen database (single file, portable, built into Python)"
+      sourceMission: "Technical Architecture Document"
+    - finding: "Schema is fully defined with all required tables and columns"
+      sourceMission: "cmos/docs/cmos-technical_architecture-v2-simplified.md Section B"
+    - finding: "Database should be in hidden .cmos/ directory (like .git)"
+      sourceMission: "Technical Architecture Document"
+
+  implementationScope:
+    coreDeliverable: |
+      - Python module with SQLite schema definition
+      - cmosctl db init command that creates .cmos/memory.db
+      - All tables from architecture: missions, sessions, project_state, decisions, facts, kb_sources, kb_chunks, kb_chunks_fts
+      - Basic project structure (setup.py, package structure)
+    outOfScope:
+      - "CLI commands for missions/sessions (next mission: B1.2)"
+      - "Export/import functionality (mission B1.4)"
+      - "Complex migration system (simple structure only)"
+      - "Testing infrastructure (can add later if needed)"
+
+  handoffContext:
+    completed:
+      - "Database schema fully implemented"
+      - "cmosctl db init command working"
+      - ".cmos/memory.db can be created and verified"
+    interfaces:
+      - "Database module: Provides connection and schema initialization"
+      - "CLI command: cmosctl db init → creates .cmos/memory.db"
+    assumptions:
+      - "Python 3.8+ with sqlite3 built-in"
+      - "Typer CLI framework will be used (next mission)"
+    nextMission: "B1.2: Core CLI Structure + Mission Commands"
+    blockers: []
+

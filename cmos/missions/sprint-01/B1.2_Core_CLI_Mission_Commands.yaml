@@ -1,0 +1,78 @@
+# pack.yaml - Metadata for the "Implementation" Domain Pack
+name: "Build.Implementation.v1"
+version: "1.0.0"
+displayName: "Implementation Mission"
+description: "A mission to implement a specific, well-scoped technical component based on the findings of a prior research mission. Sized for a single, focused development session."
+author: "CMOS Team"
+schema: "./schemas/Implementation.v1.json"
+
+---
+
+# Mission File: B1.2_Core_CLI_Mission_Commands.yaml
+
+missionId: "B1.2"
+
+objective: "To implement the core CLI structure using Typer and create all mission management commands (list, next, complete, block, add)."
+
+context: |
+  This mission builds on B1.1 (database foundation).
+  We're implementing the primary automation layer - mission management commands that replace manual backlog.yaml edits.
+  The CLI should be ergonomic and follow standard Typer patterns.
+  Commands must work with the database schema from B1.1.
+
+successCriteria:
+  - "Typer CLI framework is set up with cmosctl as entry point"
+  - "cmosctl mission list command shows all missions from database"
+  - "cmosctl mission next returns the current mission (status='Current')"
+  - "cmosctl mission complete <id> marks mission done and auto-promotes next Queued mission"
+  - "cmosctl mission block <id> marks mission blocked with reason"
+  - "cmosctl mission add <id> <name> allows manual mission creation"
+  - "All commands interact with .cmos/memory.db correctly"
+  - "Mission status transitions work: Queued → Current → In Progress → Completed"
+
+deliverables:
+  - "CLI command structure (cmos/cli/commands.py or equivalent)"
+  - "Mission management commands (list, next, complete, block, add)"
+  - "Database query/update functions for missions"
+  - "Entry point configured (setup.py or equivalent)"
+
+domainFields:
+  type: "Build.Implementation.v1"
+
+  researchFoundation:
+    - finding: "Typer is the chosen CLI framework (Python, type-safe, easy)"
+      sourceMission: "Technical Architecture Document"
+    - finding: "Mission status flow: Queued → Current → In Progress → Completed"
+      sourceMission: "CMOS Playbook Phase 3"
+    - finding: "Auto-promotion logic: complete mission → mark next Queued as Current"
+      sourceMission: "Technical Architecture Document"
+
+  implementationScope:
+    coreDeliverable: |
+      - Typer CLI application structure
+      - cmosctl mission list command
+      - cmosctl mission next command (finds Current status)
+      - cmosctl mission complete <id> (with auto-promotion)
+      - cmosctl mission block <id> (with reason prompt)
+      - cmosctl mission add <id> <name> <sprint_id>
+      - Database interaction layer for missions table
+    outOfScope:
+      - "Session logging commands (mission B1.3)"
+      - "Edit/show commands (mission B1.5)"
+      - "Export/import (mission B1.4)"
+      - "Validation/audit commands (mission B1.5)"
+
+  handoffContext:
+    completed:
+      - "CLI framework established with Typer"
+      - "Core mission management commands working"
+      - "Auto-promotion logic implemented"
+    interfaces:
+      - "CLI: cmosctl mission <command>"
+      - "Database functions: mission queries and updates"
+    assumptions:
+      - "Database from B1.1 is working"
+      - "Python package structure is in place"
+    nextMission: "B1.3: Session Logging + Git Hook"
+    blockers: []
+

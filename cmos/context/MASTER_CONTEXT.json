@@ -1,0 +1,259 @@
+{
+  "project": {
+    "name": "CMOS v2.0",
+    "version": "2.0.0",
+    "description": "Context + Mission Orchestration System - Lightweight automation layer replacing manual flat file management with SQLite database and CLI tools",
+    "status": "planning",
+    "start_date": "2025-01-27",
+    "current_sprint": "Sprint 1",
+    "deployment": {
+      "platform": "Local/Python",
+      "integration_target": "Any project using CMOS Playbook",
+      "environment": "development"
+    }
+  },
+  "strategic_context": {
+    "vision": "Lightweight automation layer that eliminates manual file upkeep while maintaining auditability and portability",
+    "philosophy": "Like .git - small, hidden (.cmos), portable, minimal surface area",
+    "core_principle": "Replace manual flat file upkeep with minimal automation. Build only what eliminates manual work.",
+    "key_goals": [
+      "Automate session/progress tracking (eliminate manual backlog.yaml, SESSIONS.jsonl edits)",
+      "Better sprint-to-sprint transitions (systematic knowledge capture)",
+      "Systematic knowledge capture (decisions, findings)",
+      "Maintain auditability (export, verify, inspect, edit)",
+      "Keep it portable (single .cmos/memory.db file)"
+    ]
+  },
+  "working_memory": {
+    "active_domain": "core_automation",
+    "session_count": 0,
+    "last_session": "2025-01-27-planning",
+    "domains": {
+      "core_automation": {
+        "status": "active",
+        "priority": 1,
+        "critical_facts": [
+          "SQLite database (.cmos/memory.db) replaces backlog.yaml, SESSIONS.jsonl, PROJECT_CONTEXT.json",
+          "CLI tool (cmosctl) automates all manual file edits",
+          "Export/import enables auditability (human-readable YAML/JSON)",
+          "Git hook auto-tracks commits as sessions",
+          "Mission Protocol integrates via CLI (manual, compatible, both tools standalone)",
+          "Sprint 1 focuses on core automation MVP + auditability"
+        ],
+        "constraints": [
+          "Must be lightweight (single database file)",
+          "Must be portable (copy folder → works)",
+          "Must maintain auditability (export, verify, edit)",
+          "Must work with existing CMOS Playbook (no breaking changes)",
+          "Python 3.8+ primary (SQLite built-in)"
+        ],
+        "decisions_made": [
+          "Simplified architecture (cut complex FSM, validation gates, heavy metrics)",
+          "SQLite as single source of truth (replaces flat files)",
+          "Hidden .cmos/ directory (like .git)",
+          "Typer for CLI framework (Python, type-safe)",
+          "Defer KB indexing to Week 2 (optional if useful)",
+          "Manual Mission Protocol integration first (no RPC initially)",
+          "Export commands match old flat file formats for compatibility",
+          "Auditability commands essential (verify, incomplete, audit, show, edit, db shell)",
+          "No research missions needed for Sprint 1 (architecture clear, standard tech)"
+        ],
+        "files_created": [
+          "cmos/docs/cmos-technical_architecture-v2-simplified.md",
+          "cmos/docs/cmos-roadmap.md",
+          "cmos/missions/sprint-01/B1.1_Database_Foundation.yaml",
+          "cmos/missions/sprint-01/B1.2_Core_CLI_Mission_Commands.yaml",
+          "cmos/missions/sprint-01/B1.3_Session_Logging_Git_Hook.yaml",
+          "cmos/missions/sprint-01/B1.4_Export_Import_Status_Commands.yaml",
+          "cmos/missions/sprint-01/B1.5_Auditability_Commands.yaml",
+          "cmos/missions/sprint-01/B1.6_Sprint_Review_Planning.yaml"
+        ],
+        "achievements": [
+          "Technical architecture solidified and simplified",
+          "Roadmap defined (3 sprints, clear goals)",
+          "Sprint 1 missions planned (6 build missions)",
+          "Auditability strategy defined (export, verify, edit, db shell)",
+          "Installation strategy planned (pip install cmos)"
+        ]
+      }
+    }
+  },
+  "technical_context": {
+    "dependencies": [
+      "Python 3.8+ (required)",
+      "SQLite 3.x (built into Python)",
+      "Typer (CLI framework)",
+      "PyYAML (for export functionality)",
+      "Git (for hook integration)"
+    ],
+    "architecture": {
+      "database": "SQLite single file (.cmos/memory.db)",
+      "cli_framework": "Typer (Python)",
+      "package_distribution": "pip install cmos (PyPI, post-Sprint 3)",
+      "file_structure": ".cmos/ hidden directory + cmos/ project structure"
+    },
+    "core_features": {
+      "database": "SQLite with schema (missions, sessions, project_state, decisions, facts, kb tables)",
+      "cli_commands": "mission, session, db, hook, export, status, context, kb (Week 2)",
+      "git_integration": "Post-commit hook auto-logs commits",
+      "auditability": "Export, verify, incomplete, audit, show, edit, db shell",
+      "portability": "Single database file, copy folder → works"
+    },
+    "integration_points": [
+      "cmosctl CLI - main interface",
+      "Mission Protocol - manual integration via cmosctl context",
+      "Git hooks - automatic commit tracking",
+      "Export formats - YAML (backlog), JSONL (sessions) for compatibility"
+    ]
+  },
+  "sprint_planning": {
+    "current_sprint": {
+      "id": "Sprint 1",
+      "theme": "Core Automation MVP",
+      "focus": "Eliminate manual file edits during session execution + auditability",
+      "status": "planned",
+      "missions": [
+        {
+          "id": "B1.1",
+          "name": "Database Foundation",
+          "status": "queued",
+          "deliverable": "SQLite schema + cmosctl db init"
+        },
+        {
+          "id": "B1.2",
+          "name": "Core CLI + Mission Commands",
+          "status": "queued",
+          "deliverable": "Typer CLI + mission list/next/complete/block/add"
+        },
+        {
+          "id": "B1.3",
+          "name": "Session Logging + Git Hook",
+          "status": "queued",
+          "deliverable": "session log/list/show + hook install"
+        },
+        {
+          "id": "B1.4",
+          "name": "Export/Import + Status Commands",
+          "status": "queued",
+          "deliverable": "export/import + status/context commands"
+        },
+        {
+          "id": "B1.5",
+          "name": "Auditability Commands",
+          "status": "queued",
+          "deliverable": "verify/incomplete/audit/show/edit + db shell"
+        },
+        {
+          "id": "B1.6",
+          "name": "Sprint Review & Planning",
+          "status": "queued",
+          "deliverable": "Sprint summary + context update + Sprint 2 planning inputs"
+        }
+      ],
+      "success_criteria": [
+        "Can execute Phase 3 (Session Execution) without editing YAML/JSON files",
+        "Mission completion automatically promotes next mission",
+        "Git commits automatically tracked",
+        "Can audit/verify missions for QA",
+        "Can export to readable formats for inspection",
+        "Can manually edit missions when needed",
+        "All existing playbook steps work, just automated"
+      ]
+    },
+    "future_sprints": {
+      "sprint_2": {
+        "theme": "Memory & KB (Optional)",
+        "focus": "Systematic knowledge capture",
+        "status": "planned",
+        "key_deliverables": [
+          "decisions and facts tables working",
+          "cmosctl decision and fact commands",
+          "Basic KB indexing (cmosctl kb index)",
+          "FTS5 search (cmosctl kb search)"
+        ]
+      },
+      "sprint_3": {
+        "theme": "Polish & Integration",
+        "focus": "Mission Protocol integration + documentation",
+        "status": "planned",
+        "key_deliverables": [
+          "cmosctl context optimized for Mission Protocol",
+          "Auto-register missions from YAML (optional)",
+          "Enhanced status/summary commands",
+          "Documentation + pip package ready"
+        ]
+      }
+    }
+  },
+  "key_decisions_log": [
+    {
+      "date": "2025-01-27",
+      "decision": "Simplified architecture approach",
+      "rationale": "Cut complex FSM, validation gates, heavy metrics. Focus on core automation that eliminates manual work. Keep it lightweight and practical.",
+      "impact": "Faster development, simpler system, maintains core value"
+    },
+    {
+      "date": "2025-01-27",
+      "decision": "SQLite as single source of truth",
+      "rationale": "Replaces flat files with queryable database. Single file, portable, atomic operations. Hidden .cmos/ directory.",
+      "impact": "Enables automation while maintaining portability"
+    },
+    {
+      "date": "2025-01-27",
+      "decision": "Comprehensive auditability features",
+      "rationale": "DB is opaque compared to flat files. Need export, verify, edit, db shell for QA and manual intervention.",
+      "impact": "System remains inspectable and editable, addresses user concerns"
+    },
+    {
+      "date": "2025-01-27",
+      "decision": "Manual Mission Protocol integration first",
+      "rationale": "Both tools work standalone. Manual integration clearer initially. Can add RPC later if needed.",
+      "impact": "Simpler implementation, both tools remain independent"
+    },
+    {
+      "date": "2025-01-27",
+      "decision": "No research missions for Sprint 1",
+      "rationale": "Architecture clearly defined, tech stack standard (Python/SQLite/Typer), patterns well-known. Ready to build.",
+      "impact": "Faster start, clear path forward"
+    }
+  ],
+  "learnings_and_facts": [
+    {
+      "category": "User Requirements",
+      "fact": "User concerned about auditability - DB must remain inspectable like flat files",
+      "captured": "2025-01-27"
+    },
+    {
+      "category": "User Requirements",
+      "fact": "User wants lightweight solution (like .git), worried about over-engineering",
+      "captured": "2025-01-27"
+    },
+    {
+      "category": "User Requirements",
+      "fact": "User prefers pip install cmos for distribution (like git or pip install)",
+      "captured": "2025-01-27"
+    },
+    {
+      "category": "Architecture",
+      "fact": "Simplified architecture removes 70% of complexity from original v2 doc",
+      "captured": "2025-01-27"
+    },
+    {
+      "category": "Process",
+      "fact": "End-of-sprint review mission (B1.6) will be template for all future sprints",
+      "captured": "2025-01-27"
+    }
+  ],
+  "ai_instructions": {
+    "preferred_language": "python",
+    "code_style": "modular_clean_minimal",
+    "testing_required": true,
+    "documentation_level": "concise",
+    "key_principles": [
+      "Lightweight and practical",
+      "Build only what eliminates manual work",
+      "Maintain auditability",
+      "Keep it portable"
+    ]
+  }
+}

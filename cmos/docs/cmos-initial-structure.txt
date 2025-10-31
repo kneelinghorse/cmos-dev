@@ -1,0 +1,19 @@
+cmos
+    ├── context
+    │   └── MASTER_CONTEXT.json
+    ├── docs
+    │   ├── cmos-technical_architecture.md
+    │   ├── roadmap.md
+    │   └── sprint-00-research-plan.md
+    ├── missions
+    │   ├── backlog.yaml
+    │   ├── research
+    │   ├── sprint-00
+    │   │   
+    │   └── templates
+    │       ├── backlog.yaml
+    │       ├── Build.Implementation.v1.yaml
+    │       └── Build.TechnicalResearch.v1.yaml
+    ├── PROJECT_CONTEXT.json
+    ├── reports
+    └── SESSIONS.jsonl

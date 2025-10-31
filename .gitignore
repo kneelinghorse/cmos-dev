@@ -1,0 +1,16 @@
+# OS artifacts
+.DS_Store
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# CMOS runtime state
+.cmos/
+
+# Virtual environments
+.venv/
+ENV/
+
+# Misc
+*.sqlite3

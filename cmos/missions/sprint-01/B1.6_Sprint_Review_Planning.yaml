@@ -1,0 +1,91 @@
+# pack.yaml - Metadata for the "Implementation" Domain Pack
+name: "Build.Implementation.v1"
+version: "1.0.0"
+displayName: "Implementation Mission"
+description: "A mission to implement a specific, well-scoped technical component based on the findings of a prior research mission. Sized for a single, focused development session."
+author: "CMOS Team"
+schema: "./schemas/Implementation.v1.json"
+
+---
+
+# Mission File: B1.6_Sprint_Review_Planning.yaml
+
+missionId: "B1.6"
+
+objective: "To conduct Sprint 1 review, assess goal achievement, capture learnings, and prepare inputs for Sprint 2 planning. This mission creates a structured report and updates project context for roadmap adjustments."
+
+context: |
+  This is the final mission for Sprint 1 and will be the template for all future sprint-end reviews.
+  After completing all build missions, we need to:
+  - Verify Sprint 1 success criteria were met
+  - Capture decisions, facts, and learnings
+  - Assess roadmap alignment
+  - Prepare context for next sprint planning
+  - Update MASTER_CONTEXT.json with strategic information
+
+successCriteria:
+  - "Sprint 1 success criteria assessment completed"
+  - "All deliverables verified (database, CLI commands, git hook, exports, auditability)"
+  - "Learnings and decisions documented in decisions/facts tables"
+  - "Sprint summary report generated (cmos/reports/sprint-01-summary.md)"
+  - "MASTER_CONTEXT.json updated with Sprint 1 outcomes"
+  - "Roadmap reviewed and adjusted if needed"
+  - "Sprint 2 readiness assessment completed"
+  - "Any blockers or technical debt documented"
+
+deliverables:
+  - "Sprint 1 summary report (cmos/reports/sprint-01-summary.md)"
+  - "Updated MASTER_CONTEXT.json with Sprint 1 outcomes"
+  - "List of decisions captured during sprint"
+  - "List of facts/learnings captured"
+  - "Assessment of roadmap alignment"
+  - "Sprint 2 planning inputs (what's ready, what needs research, blockers)"
+
+domainFields:
+  type: "Build.Implementation.v1"
+
+  researchFoundation:
+    - finding: "End-of-sprint reviews are critical for continuous improvement"
+      sourceMission: "CMOS Playbook Phase 3 Part 3"
+    - finding: "MASTER_CONTEXT.json is the strategic planning document"
+      sourceMission: "User requirements"
+    - finding: "Systematic knowledge capture enables better sprint transitions"
+      sourceMission: "Technical Architecture Document"
+
+  implementationScope:
+    coreDeliverable: |
+      - Review all Sprint 1 deliverables against success criteria
+      - Run cmosctl mission verify/audit to check system health
+      - Capture key decisions using cmosctl decision commands
+      - Capture facts/learnings using cmosctl fact commands
+      - Generate sprint summary report with:
+        * Deliverables checklist
+        * Success metrics assessment
+        * Key achievements
+        * Technical decisions made
+        * Blockers/risks encountered
+        * Learnings for next sprint
+      - Review roadmap.md and assess alignment
+      - Update MASTER_CONTEXT.json with strategic context
+      - Prepare Sprint 2 planning inputs
+    outOfScope:
+      - "Sprint 2 mission creation (that's Phase 2 planning)"
+      - "Detailed metrics analysis (high-level assessment only)"
+      - "Major roadmap restructuring (noting adjustments only)"
+
+  handoffContext:
+    completed:
+      - "Sprint 1 review complete"
+      - "Learnings captured systematically"
+      - "Context updated for planning"
+      - "Sprint 2 planning inputs ready"
+    interfaces:
+      - "Report: cmos/reports/sprint-01-summary.md"
+      - "Context: cmos/context/MASTER_CONTEXT.json"
+      - "Database: decisions and facts tables"
+    assumptions:
+      - "All Sprint 1 build missions (B1.1-B1.5) completed"
+      - "cmosctl commands available for capturing decisions/facts"
+    nextMission: "Phase 2: Sprint 2 Mission Planning"
+    blockers: []
+

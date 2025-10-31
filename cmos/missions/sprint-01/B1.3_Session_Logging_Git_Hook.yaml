@@ -1,0 +1,78 @@
+# pack.yaml - Metadata for the "Implementation" Domain Pack
+name: "Build.Implementation.v1"
+version: "1.0.0"
+displayName: "Implementation Mission"
+description: "A mission to implement a specific, well-scoped technical component based on the findings of a prior research mission. Sized for a single, focused development session."
+author: "CMOS Team"
+schema: "./schemas/Implementation.v1.json"
+
+---
+
+# Mission File: B1.3_Session_Logging_Git_Hook.yaml
+
+missionId: "B1.3"
+
+objective: "To implement session logging functionality and git hook integration that automatically tracks commits as sessions."
+
+context: |
+  This mission builds on B1.2 (CLI structure).
+  We're replacing manual SESSIONS.jsonl edits with automated session tracking.
+  The git hook should capture commits automatically, while the CLI command allows manual session logging.
+  This enables the automated workflow described in the playbook.
+
+successCriteria:
+  - "cmosctl session log --type <action> --mission <id> --summary <text> command works"
+  - "Session types supported: start, complete, blocked, commit"
+  - "cmosctl session list shows all sessions (with optional filters)"
+  - "cmosctl session show <id> displays session details"
+  - "cmosctl hook install writes .git/hooks/post-commit script"
+  - "Post-commit hook automatically logs commits with git metadata"
+  - "Hook extracts commit hash, message, and changed files"
+  - "All sessions are stored in sessions table in database"
+
+deliverables:
+  - "cmosctl session log command with all required flags"
+  - "cmosctl session list/show commands for inspection"
+  - "cmosctl hook install command"
+  - "Post-commit git hook script template"
+  - "Database interaction for sessions table"
+
+domainFields:
+  type: "Build.Implementation.v1"
+
+  researchFoundation:
+    - finding: "Sessions replace SESSIONS.jsonl (structured, queryable)"
+      sourceMission: "Technical Architecture Document"
+    - finding: "Git hook pattern: .git/hooks/post-commit shell script"
+      sourceMission: "Standard git patterns"
+    - finding: "Session fields: ts, mission_id, action, agent, summary, details"
+      sourceMission: "Technical Architecture Document Section B"
+
+  implementationScope:
+    coreDeliverable: |
+      - cmosctl session log command (with --type, --mission, --summary, --agent, --details flags)
+      - cmosctl session list command (with optional --mission filter)
+      - cmosctl session show <id> command
+      - cmosctl hook install command (writes post-commit hook)
+      - Post-commit hook script (captures commit hash, message, files)
+      - Database functions for sessions table
+    outOfScope:
+      - "Export sessions to JSONL (mission B1.4)"
+      - "Session metrics/analytics (future enhancement)"
+      - "Multiple git hook types (just post-commit for now)"
+
+  handoffContext:
+    completed:
+      - "Session logging fully automated"
+      - "Git hook integration working"
+      - "Commit tracking happens automatically"
+    interfaces:
+      - "CLI: cmosctl session log/list/show"
+      - "CLI: cmosctl hook install"
+      - "Git hook: .git/hooks/post-commit"
+    assumptions:
+      - "Git repository exists in project root"
+      - "Database and CLI from previous missions working"
+    nextMission: "B1.4: Export/Import + Status Commands"
+    blockers: []
+

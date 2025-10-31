@@ -1,0 +1,78 @@
+# pack.yaml - Metadata for the "Implementation" Domain Pack
+name: "Build.Implementation.v1"
+version: "1.0.0"
+displayName: "Implementation Mission"
+description: "A mission to implement a specific, well-scoped technical component based on the findings of a prior research mission. Sized for a single, focused development session."
+author: "CMOS Team"
+schema: "./schemas/Implementation.v1.json"
+
+---
+
+# Mission File: B1.4_Export_Import_Status_Commands.yaml
+
+missionId: "B1.4"
+
+objective: "To implement export/import functionality for auditability and status/context commands for AI prompts."
+
+context: |
+  This mission builds on previous missions (database + CLI structure).
+  Export/import enables human-readable inspection (replacing flat files for audit purposes).
+  Status and context commands provide project state for AI prompts and Mission Protocol integration.
+  These commands address the auditability requirements from the architecture.
+
+successCriteria:
+  - "cmosctl export backlog generates YAML matching old backlog.yaml format"
+  - "cmosctl export sessions generates JSONL matching old SESSIONS.jsonl format"
+  - "cmosctl export all exports everything to readable formats"
+  - "cmosctl db import <file> loads exported data back into database"
+  - "cmosctl status shows current sprint and mission state"
+  - "cmosctl context exports JSON for AI prompts"
+  - "Export formats are human-readable and compatible with existing tools"
+
+deliverables:
+  - "cmosctl export backlog/sessions/all commands"
+  - "cmosctl db import command"
+  - "cmosctl status command (with --verbose option)"
+  - "cmosctl context command (JSON export)"
+  - "YAML/JSON serialization for missions and sessions"
+  - "Import validation and error handling"
+
+domainFields:
+  type: "Build.Implementation.v1"
+
+  researchFoundation:
+    - finding: "Export must match old flat file formats for compatibility"
+      sourceMission: "Architecture Document Section K"
+    - finding: "YAML format for backlog, JSONL for sessions"
+      sourceMission: "Existing CMOS Playbook structure"
+    - finding: "Context export needed for Mission Protocol integration"
+      sourceMission: "Architecture Document Section E"
+
+  implementationScope:
+    coreDeliverable: |
+      - Export commands (backlog → YAML, sessions → JSONL, all → both)
+      - Import command (restore from exported files)
+      - Status command (current sprint/mission state)
+      - Context command (JSON for AI/Mission Protocol)
+      - YAML/JSON serialization (PyYAML, json modules)
+    outOfScope:
+      - "Complex import validation (basic validation only)"
+      - "Format conversion tools (exact format matching)"
+      - "Incremental exports (full exports only for now)"
+
+  handoffContext:
+    completed:
+      - "Export/import functionality working"
+      - "Status and context commands implemented"
+      - "Human-readable formats available for audit"
+    interfaces:
+      - "CLI: cmosctl export <type>"
+      - "CLI: cmosctl db import <file>"
+      - "CLI: cmosctl status [--verbose]"
+      - "CLI: cmosctl context"
+    assumptions:
+      - "PyYAML library available for YAML export"
+      - "All previous missions completed"
+    nextMission: "B1.5: Auditability Commands"
+    blockers: []
+
