@@ -64,3 +64,21 @@ registry.register("remember this", log_fact, description="Capture an ad-hoc fact
 Each trigger normalizes the phrase (case insensitive) and accepts aliases, so variants like `run the current mission` map to the same handler.
 
 Stay within the helper for file updates—manual edits remain available for recovery, but the trigger registry is now the default path for mission execution and check-ins.
+
+## Knowledge Recall Helper
+
+Mission **B2.2 – Basic KB Indexing** adds a lightweight pointer search across the curated documentation folders. The helper surfaces path, title, and excerpt metadata that can be injected into a prompt or logged through the session memory triggers.
+
+```python
+from cmosctl import recall_knowledge
+
+results = recall_knowledge("semantic retrieval strategy", limit=3)
+for item in results:
+    location = f"{item.path}:{item.line}" if item.line else item.path
+    print(f"{item.title} -> {location}\n  {item.excerpt}\n")
+```
+
+- Sources are restricted to `cmos/docs/**` and `cmos/research/**`.
+- Results are ranked by direct keyword hits with a small fuzzy-match fallback.
+- Use `rebuild_index()` if you add new research files during a session and need the cache refreshed.
+- When running from a trigger, call `registry.recall_knowledge("query")` to keep paths aligned with the active workspace.

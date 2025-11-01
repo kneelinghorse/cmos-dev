@@ -7,3 +7,5 @@
 {"ts": "2025-10-31T23:01:49Z", "mission": "B1.6", "action": "complete", "status": "completed", "agent": "codex", "summary": "Sprint 1 review summary recorded; context refreshed.", "details": {"next_hint": "B2.1 promoted to Current"}}
 {"ts": "2025-11-01T20:24:01Z", "mission": "B2.1", "action": "start", "status": "in_progress", "agent": "codex", "summary": "Kick off Memory Core mission"}
 {"ts": "2025-11-01T20:32:23Z", "mission": "B2.1", "action": "complete", "status": "completed", "agent": "codex", "summary": "Trigger registry automation delivered", "details": {"next_hint": "Wire B2.2 recall helpers into the trigger registry"}}
+{"ts": "2025-11-01T20:54:02Z", "mission": "B2.2", "action": "start", "status": "in_progress", "agent": "codex", "summary": "Kick off Basic KB indexing helpers"}
+{"ts": "2025-11-01T20:59:27Z", "mission": "B2.2", "action": "complete", "status": "completed", "agent": "codex", "summary": "Docs recall helper shipped", "details": {"next_hint": "B2.3 promoted to Current for FTS search scaffolding"}}

@@ -5,11 +5,12 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable
+from typing import Any, Callable, Dict, Iterable, List
 
 import yaml
 
 from . import db as db_commands
+from .recall import RecallResult, recall_knowledge
 
 DEFAULT_DB_PATH = db_commands.DEFAULT_DB_PATH
 DEFAULT_BACKLOG_PATH = Path("cmos/missions/backlog.yaml")
@@ -359,6 +360,12 @@ class TriggerRegistry:
                 }
             )
         return sorted(results, key=lambda item: item["phrase"].lower())
+
+    def recall_knowledge(self, query: str, *, limit: int = 5) -> List[RecallResult]:
+        """Proxy helper that keeps recall paths aligned with the registry config."""
+
+        kb_root = self.project_context_path.parent
+        return list(recall_knowledge(query, limit=limit, kb_root=kb_root))
 
     def _select_active_mission(self) -> tuple[db_commands.Mission | None, bool]:
         with db_commands.connect(self.db_path) as conn:

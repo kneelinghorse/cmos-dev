@@ -6,6 +6,7 @@ Mission B2.1 adds conversational trigger helpers for automated workflows.
 """
 
 from .cli import main
+from .recall import RecallResult, recall_knowledge, rebuild_index
 from .triggers import (
     MissionContext,
     MissionRunOutcome,
@@ -13,4 +14,13 @@ from .triggers import (
     default_registry,
 )
 
-__all__ = ["main", "default_registry", "TriggerRegistry", "MissionContext", "MissionRunOutcome"]
+__all__ = [
+    "main",
+    "default_registry",
+    "TriggerRegistry",
+    "MissionContext",
+    "MissionRunOutcome",
+    "recall_knowledge",
+    "RecallResult",
+    "rebuild_index",
+]
