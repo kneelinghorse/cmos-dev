@@ -35,7 +35,7 @@ domainFields:
   - sprintId: Sprint 1
     title: Core Automation MVP
     focus: Eliminate manual file edits during session execution + auditability
-    status: Current
+    status: Completed
     missions:
     - id: B1.1
       name: Database Foundation
@@ -61,21 +61,25 @@ domainFields:
       name: Auditability Commands
       status: Completed
       completed_at: '2025-10-31T21:57:53Z'
-      notes: Auditability commands delivered via cmosctl QA suite
+      notes: Auditability commands delivered
     - id: B1.6
       name: Sprint Review & Planning
-      status: Current
+      status: Completed
+      completed_at: '2025-10-31T23:01:21Z'
+      notes: Sprint 1 review summary recorded; context refreshed.
   - sprintId: Sprint 2
     title: Memory & KB (Optional)
     focus: Systematic knowledge capture for better sprint transitions
-    status: Planned
+    status: Current
     missions:
     - id: B2.1
       name: Memory Core (decisions, facts)
-      status: Queued
+      status: Completed
+      completed_at: '2025-11-01T20:32:23Z'
+      notes: Conversational triggers orchestrate mission workflow and check-ins.
     - id: B2.2
       name: Basic KB Indexing
-      status: Queued
+      status: Current
     - id: B2.3
       name: FTS5 Search
       status: Queued
