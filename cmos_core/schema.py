@@ -62,13 +62,18 @@ SCHEMA_STATEMENTS: Sequence[str] = (
     CREATE TABLE IF NOT EXISTS kb_sources (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       path TEXT UNIQUE,
+      title TEXT,
+      fingerprint TEXT,
       last_indexed_ts TEXT
     );
     """,
     """
     CREATE TABLE IF NOT EXISTS kb_chunks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      source_id INTEGER REFERENCES kb_sources(id),
+      source_id INTEGER REFERENCES kb_sources(id) ON DELETE CASCADE,
+      order_index INTEGER,
+      section TEXT,
+      line INTEGER,
       text TEXT
     );
     """,

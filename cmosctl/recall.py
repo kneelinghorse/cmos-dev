@@ -12,9 +12,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Iterable, Mapping
 
-
-_ALLOWED_SUFFIXES = {".md", ".markdown", ".txt", ".rst"}
-_DEFAULT_KB_ROOT = Path(__file__).resolve().parents[1] / "cmos"
+from ._knowledge import extract_paragraphs, iter_source_files, normalize_root, relative_path, shorten
 
 
 @dataclass(slots=True)
@@ -52,7 +50,7 @@ class _IndexedSnippet:
 
     @property
     def excerpt(self) -> str:
-        return _shorten(self.text)
+        return shorten(self.text)
 
 
 _INDEX_CACHE: dict[Path, tuple[_IndexedSnippet, ...]] = {}
@@ -86,7 +84,7 @@ def recall_knowledge(
     if not query_tokens:
         raise ValueError("Query must include at least one alphanumeric term.")
 
-    root = (kb_root or _DEFAULT_KB_ROOT).resolve()
+    root = normalize_root(kb_root)
     snippets = _load_index(root)
     query_lower = normalized_query.lower()
 
@@ -123,7 +121,7 @@ def rebuild_index(kb_root: Path | None = None) -> int:
     Returns the number of snippet entries after the refresh.
     """
 
-    root = (kb_root or _DEFAULT_KB_ROOT).resolve()
+    root = normalize_root(kb_root)
     snippets = _build_index(root)
     _INDEX_CACHE[root] = snippets
     _INDEX_SIGNATURES[root] = _build_signature(snippets)
@@ -145,18 +143,18 @@ def _load_index(root: Path) -> tuple[_IndexedSnippet, ...]:
 
 
 def _build_index(root: Path) -> tuple[_IndexedSnippet, ...]:
-    sources = list(_iter_source_files(root))
+    sources = list(iter_source_files(root))
     snippets: list[_IndexedSnippet] = []
     for path in sources:
         try:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             text = path.read_text(encoding="utf-8", errors="ignore")
-        title, blocks = _extract_paragraphs(text)
+        title, paragraphs = extract_paragraphs(text)
         if not title:
             title = path.stem.replace("_", " ").replace("-", " ") or path.name
-        rel_path = _relative_path(path, root)
-        for block in blocks:
+        rel_path = relative_path(path, root)
+        for block in paragraphs:
             snippets.append(
                 _IndexedSnippet(
                     path=path,
@@ -182,99 +180,12 @@ def _build_signature(snippets: Iterable[_IndexedSnippet]) -> dict[Path, float]:
 
 def _collect_signature(root: Path) -> dict[Path, float]:
     signature: dict[Path, float] = {}
-    for path in _iter_source_files(root):
+    for path in iter_source_files(root):
         try:
             signature[path] = path.stat().st_mtime
         except FileNotFoundError:
             signature[path] = 0.0
     return signature
-
-
-def _iter_source_files(root: Path) -> Iterable[Path]:
-    if not root.exists():
-        return
-
-    docs_dir = root / "docs"
-    research_dir = root / "research"
-
-    for directory in (docs_dir, research_dir):
-        if not directory.exists():
-            continue
-        for path in directory.rglob("*"):
-            if path.is_file() and path.suffix.lower() in _ALLOWED_SUFFIXES:
-                yield path
-
-
-def _relative_path(path: Path, root: Path) -> str:
-    candidates = [root.parent, root]
-    for candidate in candidates:
-        try:
-            relative = path.relative_to(candidate)
-            return relative.as_posix()
-        except ValueError:
-            continue
-    return path.resolve().as_posix()
-
-
-def _extract_paragraphs(text: str) -> tuple[str, list["_Paragraph"]]:
-    lines = text.splitlines()
-    title = None
-    section = None
-    in_code_block = False
-    buffer: list[str] = []
-    start_line = 1
-    blocks: list[_Paragraph] = []
-
-    def flush() -> None:
-        nonlocal buffer, start_line, blocks, section
-        if not buffer:
-            return
-        paragraph = " ".join(line.strip() for line in buffer if line.strip())
-        paragraph = _collapse_spaces(paragraph)
-        if paragraph:
-            blocks.append(_Paragraph(text=paragraph, line=start_line, section=section))
-        buffer = []
-
-    for index, raw_line in enumerate(lines, start=1):
-        stripped = raw_line.strip()
-        if stripped.startswith("```"):
-            flush()
-            in_code_block = not in_code_block
-            continue
-        if in_code_block:
-            continue
-        if stripped.startswith("#"):
-            flush()
-            heading_text = stripped.lstrip("#").strip()
-            if title is None and stripped.startswith("# "):
-                title = heading_text if heading_text else None
-            section = heading_text or section
-            continue
-        if not stripped:
-            flush()
-            continue
-        if not buffer:
-            start_line = index
-        buffer.append(stripped)
-
-    flush()
-
-    if title is None:
-        title = ""
-
-    return title, blocks
-
-
-def _collapse_spaces(text: str) -> str:
-    parts = text.split()
-    return " ".join(parts)
-
-
-def _shorten(text: str, *, limit: int = 280) -> str:
-    if len(text) <= limit:
-        return text
-    truncated = text[: limit - 3].rstrip()
-    return f"{truncated}..."
 
 
 def _tokenize(text: str) -> list[str]:
@@ -315,10 +226,3 @@ def _score_snippet(snippet: _IndexedSnippet, tokens: list[str], query_lower: str
     score += 0.25 * unique_hits
 
     return score
-
-
-@dataclass(slots=True)
-class _Paragraph:
-    text: str
-    line: int
-    section: str | None

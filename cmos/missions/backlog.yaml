@@ -84,10 +84,12 @@ domainFields:
       notes: Lightweight recall helper exported via cmosctl.
     - id: B2.3
       name: FTS5 Search
-      status: Current
+      status: Completed
+      completed_at: '2025-11-01T21:26:26Z'
+      notes: FTS5 index + kb search commands shipped
     - id: B2.4
       name: Sprint Transition Tools
-      status: Queued
+      status: Current
   - sprintId: Sprint 3
     title: Polish & Integration
     focus: Mission Protocol integration + documentation + distribution

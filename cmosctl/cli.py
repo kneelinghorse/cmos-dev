@@ -17,12 +17,14 @@ import typer
 import yaml
 
 from . import db as db_commands
+from . import kb as kb_commands
 
 app = typer.Typer(help="CMOS command-line interface", add_completion=False, no_args_is_help=True)
 mission_app = typer.Typer(help="Mission management commands", add_completion=False)
 db_app = typer.Typer(help="Database maintenance commands", add_completion=False)
 session_app = typer.Typer(help="Session logging commands", add_completion=False)
 hook_app = typer.Typer(help="Git hook utilities", add_completion=False)
+kb_app = typer.Typer(help="Knowledge base indexing and search", add_completion=False)
 export_app = typer.Typer(help="Export data to human-readable files", add_completion=False)
 
 app.add_typer(db_app, name="db")
@@ -30,6 +32,7 @@ app.add_typer(mission_app, name="mission")
 app.add_typer(session_app, name="session")
 app.add_typer(hook_app, name="hook")
 app.add_typer(export_app, name="export")
+app.add_typer(kb_app, name="kb")
 
 STATUS_NORMALIZATION = {
     "Queued": "Queued",
@@ -693,6 +696,74 @@ def session_show(
     typer.echo(f"Summary: {session.summary or '-'}")
     typer.echo("Details:")
     typer.echo(session.details or "-")
+
+
+@kb_app.command("index")
+def kb_index(
+    ctx: typer.Context,
+    root: Path | None = typer.Option(None, "--root", help="Knowledge base root (default: project cmos directory)"),
+    force: bool = typer.Option(False, "--force", help="Reindex all sources even if unchanged"),
+) -> None:
+    db_path = _ensure_context(ctx)
+    stats = kb_commands.index_knowledge(db_path=db_path, kb_root=root, force=force)
+    typer.echo(
+        "Indexed {indexed} sources ({chunks} chunks); skipped {skipped} unchanged; removed {deleted} missing.".format(
+            indexed=stats.get("indexed", 0),
+            chunks=stats.get("chunks", 0),
+            skipped=stats.get("skipped", 0),
+            deleted=stats.get("deleted", 0),
+        )
+    )
+
+
+@kb_app.command("search")
+def kb_search(
+    ctx: typer.Context,
+    query: str = typer.Argument(..., help="FTS query string (quote multi-word terms)"),
+    limit: int = typer.Option(5, "--limit", help="Maximum matches to return (0 = no limit)"),
+    json_output: bool = typer.Option(False, "--json", help="Return JSON payload"),
+) -> None:
+    db_path = _ensure_context(ctx)
+    results = kb_commands.search_knowledge(query, db_path=db_path, limit=limit)
+    if json_output:
+        typer.echo(json.dumps([hit.as_dict() for hit in results], indent=2))
+        return
+    if not results:
+        typer.echo("No matches found.")
+        return
+    for hit in results:
+        location = f"{hit.path}:{hit.line}" if hit.line is not None else hit.path
+        section = f" ({hit.section})" if hit.section else ""
+        typer.echo(f"{location}{section} [{hit.score:.3f}]")
+        typer.echo(textwrap.indent(hit.snippet, "  "))
+        typer.echo()
+
+
+@kb_app.command("validate")
+def kb_validate(
+    ctx: typer.Context,
+    root: Path | None = typer.Option(None, "--root", help="Knowledge base root (default: project cmos directory)"),
+    limit: int = typer.Option(3, "--limit", help="Maximum matches per query"),
+    refresh: bool = typer.Option(True, "--refresh/--no-refresh", help="Reindex before running validation queries"),
+    json_output: bool = typer.Option(False, "--json", help="Return JSON payload"),
+) -> None:
+    db_path = _ensure_context(ctx)
+    report = kb_commands.validate_queries(
+        db_path=db_path,
+        kb_root=root,
+        limit=limit,
+        refresh=refresh,
+    )
+    if json_output:
+        typer.echo(json.dumps(report, indent=2))
+        return
+    for item in report:
+        typer.echo(f"Query: {item['query']} ({item['hit_count']} hits)")
+        for hit in item["hits"]:
+            location = f"{hit['path']}:{hit['line']}" if hit.get("line") is not None else hit["path"]
+            section = f" ({hit['section']})" if hit.get("section") else ""
+            typer.echo(f"  - {location}{section}")
+        typer.echo()
 
 
 @hook_app.command("install")

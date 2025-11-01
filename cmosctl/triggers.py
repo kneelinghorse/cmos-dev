@@ -10,6 +10,7 @@ from typing import Any, Callable, Dict, Iterable, List
 import yaml
 
 from . import db as db_commands
+from .kb import SearchHit, search_knowledge as kb_search
 from .recall import RecallResult, recall_knowledge
 
 DEFAULT_DB_PATH = db_commands.DEFAULT_DB_PATH
@@ -366,6 +367,11 @@ class TriggerRegistry:
 
         kb_root = self.project_context_path.parent
         return list(recall_knowledge(query, limit=limit, kb_root=kb_root))
+
+    def search_knowledge(self, query: str, *, limit: int = 5) -> List[SearchHit]:
+        """FTS-backed search helper responding with ranked chunk hits."""
+
+        return list(kb_search(query, limit=limit, db_path=self.db_path))
 
     def _select_active_mission(self) -> tuple[db_commands.Mission | None, bool]:
         with db_commands.connect(self.db_path) as conn:

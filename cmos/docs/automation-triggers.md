@@ -82,3 +82,14 @@ for item in results:
 - Results are ranked by direct keyword hits with a small fuzzy-match fallback.
 - Use `rebuild_index()` if you add new research files during a session and need the cache refreshed.
 - When running from a trigger, call `registry.recall_knowledge("query")` to keep paths aligned with the active workspace.
+
+## FTS Search Helper
+
+Mission **B2.3 – FTS5 Search** layers a full-text index over the same research and docs corpus so assistants can discover relevant passages even when they do not remember the exact heading. The helper complements pointer recall—use recall for curated highlights, and FTS search for exploratory keyword discovery.
+
+- Build or refresh the index with `cmosctl kb index`. The command keeps track of file fingerprints and only reprocesses changed sources.
+- Query the index with `cmosctl kb search "policy automation" --limit 5` to return ranked chunks including path, optional section, line number, and snippet.
+- Inside trigger workflows call `registry.search_knowledge("query")` to fetch the same structured results without leaving the automation context.
+- `cmosctl kb validate` runs representative sample queries to confirm the index is fresh before a hand-off or demo.
+
+FTS results are stored in `.cmos/memory.db` (`kb_sources`, `kb_chunks`, `kb_chunks_fts`). Pair the ranked hits with recall snippets when responding to users so prompts include both authoritative pointers and broader supporting evidence.

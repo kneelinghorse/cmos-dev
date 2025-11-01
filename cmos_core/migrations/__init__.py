@@ -45,3 +45,25 @@ def _baseline(conn: sqlite3.Connection) -> None:
 
 
 migration_manager.register("baseline", _baseline)
+
+
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(row[1] == column for row in rows)
+
+
+def _ensure_kb_metadata(conn: sqlite3.Connection) -> None:
+    if _column_exists(conn, "kb_sources", "title") is False:
+        conn.execute("ALTER TABLE kb_sources ADD COLUMN title TEXT")
+    if _column_exists(conn, "kb_sources", "fingerprint") is False:
+        conn.execute("ALTER TABLE kb_sources ADD COLUMN fingerprint TEXT")
+    if _column_exists(conn, "kb_chunks", "order_index") is False:
+        conn.execute("ALTER TABLE kb_chunks ADD COLUMN order_index INTEGER")
+    if _column_exists(conn, "kb_chunks", "section") is False:
+        conn.execute("ALTER TABLE kb_chunks ADD COLUMN section TEXT")
+    if _column_exists(conn, "kb_chunks", "line") is False:
+        conn.execute("ALTER TABLE kb_chunks ADD COLUMN line INTEGER")
+    conn.commit()
+
+
+migration_manager.register("kb_metadata_columns", _ensure_kb_metadata)
